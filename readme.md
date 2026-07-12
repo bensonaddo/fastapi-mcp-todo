@@ -25,7 +25,7 @@ brew install cursor
 `uvicorn main:app --reload`
 
 # Start App in Prod Mode:
-`unicorn main:app --host 0.0.0.0 --port 8000`
+`uvicorn main:app --host 0.0.0.0 --port 8000`
 
 # Create MCP and Connect 
 Import the module fastapi-mcp module
