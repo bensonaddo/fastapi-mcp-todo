@@ -4,8 +4,11 @@ A simple CRUD API for managing todo items backed by a local SQLite database.
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from database import get_db, init_db
@@ -14,6 +17,9 @@ from schemas import TodoCreate, TodoResponse, TodoUpdate
 
 # Import FastAPIMCP
 from fastapi_mcp import FastApiMCP
+
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
 
 
 @asynccontextmanager
@@ -32,14 +38,16 @@ app = FastAPI(
 
 
 # ---------------------------------------------------------------------------
-# Root route
+# Frontend — serve static assets and the SPA shell
 # ---------------------------------------------------------------------------
 
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-@app.get("/", tags=["Root"])
-async def read_root() -> dict[str, str]:
-    """Return a welcome message for the API."""
-    return {"message": "Welcome to the Todo API"}
+
+@app.get("/", tags=["Root"], include_in_schema=False)
+async def read_root() -> FileResponse:
+    """Serve the todo manager frontend."""
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 # ---------------------------------------------------------------------------
