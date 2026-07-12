@@ -21,8 +21,11 @@ brew install cursor
 # Start Dev environment
 `fastapi dev main.py`
 
-# Start Project with uvicorn
-`shuvicorn main:app --reload`
+# Start Project with uvicorn on dev mode
+`uvicorn main:app --reload`
+
+# Start App in Prod Mode:
+`unicorn main:app --host 0.0.0.0 --port 8000`
 
 # Create MCP and Connect 
 Import the module fastapi-mcp module
