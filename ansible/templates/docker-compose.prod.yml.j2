@@ -1,0 +1,16 @@
+services:
+  app:
+    image: {{ app_image }}
+    ports:
+      - "{{ app_port }}:8000"
+    environment:
+      WEB_CONCURRENCY: "{{ web_concurrency }}"
+{% if database_url %}
+      DATABASE_URL: "{{ database_url }}"
+{% endif %}
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
