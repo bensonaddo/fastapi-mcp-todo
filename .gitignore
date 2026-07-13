@@ -45,6 +45,9 @@ graphify-out/
 # Claude Code local settings
 .claude/
 
+# Local-only setup notes (account-specific, not shared docs)
+docs/ghcr-setup.md
+
 # Logs and test/CI reports
 *.log
 logs/

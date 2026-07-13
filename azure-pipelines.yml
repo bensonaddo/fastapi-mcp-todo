@@ -66,8 +66,18 @@ stages:
               tags: |
                 $(tag)
                 latest
+          # ACR is always private — re-authenticate so Trivy can pull the image
+          # (Docker@2 buildAndPush logs out when its task ends)
+          - task: Docker@2
+            displayName: Log in to ACR for Trivy
+            inputs:
+              command: login
+              containerRegistry: acr-connection
           - script: |
-              curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b ./bin
+              set -euo pipefail
+              TRIVY_VERSION=v0.72.0
+              curl -sfL "https://raw.githubusercontent.com/aquasecurity/trivy/${TRIVY_VERSION}/contrib/install.sh" \
+                | sh -s -- -b ./bin "${TRIVY_VERSION}"
               ./bin/trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed \
                 $(containerRegistry)/$(imageRepository):$(tag)
             displayName: Trivy vulnerability scan
@@ -84,16 +94,18 @@ stages:
             deploy:
               steps:
                 - checkout: self
-                - task: KubernetesManifest@1
+                - script: |
+                    cd $(Build.SourcesDirectory)/k8s/overlays/staging
+                    kustomize edit set image ghcr.io/OWNER/fastapi-mcp-todo=$(containerRegistry)/$(imageRepository):$(tag)
+                  displayName: Point overlay at ACR image
+                - task: Kubernetes@1
                   displayName: Apply kustomize overlay
                   inputs:
-                    action: deploy
-                    kubernetesServiceConnection: aks-staging
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: aks-staging
                     namespace: todo-staging
-                    manifests: |
-                      $(Build.SourcesDirectory)/k8s/overlays/staging
-                    kustomize: true
-                    containers: $(containerRegistry)/$(imageRepository):$(tag)
+                    command: apply
+                    arguments: -k $(Build.SourcesDirectory)/k8s/overlays/staging
                 - task: Kubernetes@1
                   displayName: Wait for rollout
                   inputs:
@@ -115,16 +127,18 @@ stages:
             deploy:
               steps:
                 - checkout: self
-                - task: KubernetesManifest@1
+                - script: |
+                    cd $(Build.SourcesDirectory)/k8s/overlays/production
+                    kustomize edit set image ghcr.io/OWNER/fastapi-mcp-todo=$(containerRegistry)/$(imageRepository):$(tag)
+                  displayName: Point overlay at ACR image
+                - task: Kubernetes@1
                   displayName: Apply kustomize overlay
                   inputs:
-                    action: deploy
-                    kubernetesServiceConnection: aks-production
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: aks-production
                     namespace: todo-prod
-                    manifests: |
-                      $(Build.SourcesDirectory)/k8s/overlays/production
-                    kustomize: true
-                    containers: $(containerRegistry)/$(imageRepository):$(tag)
+                    command: apply
+                    arguments: -k $(Build.SourcesDirectory)/k8s/overlays/production
                 - task: Kubernetes@1
                   displayName: Wait for rollout
                   inputs:
