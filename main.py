@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from database import get_db, init_db
@@ -48,6 +49,41 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 async def read_root() -> FileResponse:
     """Serve the todo manager frontend."""
     return FileResponse(STATIC_DIR / "index.html")
+
+
+# ---------------------------------------------------------------------------
+# Operational endpoints — used by container/orchestrator health probes
+# ---------------------------------------------------------------------------
+
+
+@app.get("/health", tags=["Ops"], include_in_schema=False)
+async def health() -> dict[str, str]:
+    """Liveness probe: process is up and serving requests."""
+    return {"status": "ok"}
+
+
+@app.get("/ready", tags=["Ops"], include_in_schema=False)
+async def ready(db: Session = Depends(get_db)) -> dict[str, str]:
+    """Readiness probe: verifies the database is reachable."""
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable",
+        ) from exc
+    return {"status": "ready"}
+
+
+# Prometheus metrics at /metrics — no-op if the instrumentator isn't installed
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator(
+        excluded_handlers=["/metrics", "/health", "/ready", "/static/.*"]
+    ).instrument(app).expose(app, include_in_schema=False)
+except ImportError:
+    pass
 
 
 # ---------------------------------------------------------------------------

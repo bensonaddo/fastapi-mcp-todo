@@ -38,3 +38,45 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+# graphify knowledge-graph outputs
+graphify-out/
+
+# Claude Code local settings
+.claude/
+
+# Logs and test/CI reports
+*.log
+logs/
+test-results.xml
+coverage.xml
+
+# Other local databases
+*.sqlite
+*.sqlite3
+
+# Terraform (keep .terraform.lock.hcl tracked)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
+# Ansible (real inventory and vault credentials stay local)
+ansible/inventory.ini
+*.retry
+.vault_pass*
+
+# Kubeconfigs and credentials — never commit
+kubeconfig*
+*.kubeconfig
+*.pem
+*.key
+*.crt
+secrets.yaml
+secret.yaml
+!k8s/base/secret.example.yaml
+
+# Local docker-compose overrides
+docker-compose.override.yml
+
