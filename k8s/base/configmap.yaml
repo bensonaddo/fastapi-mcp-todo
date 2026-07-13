@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: todo-api-config
+  namespace: todo
+data:
+  WEB_CONCURRENCY: "2"
+  PORT: "8000"
