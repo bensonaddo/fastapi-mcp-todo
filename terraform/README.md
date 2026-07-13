@@ -18,12 +18,21 @@ terraform plan -var-file=environments/staging.tfvars
 terraform apply -var-file=environments/staging.tfvars
 ```
 
+## ⚠️ Placeholders — replace before real use
+
+| Placeholder | Where | Replace with |
+| --- | --- | --- |
+| `CHANGE_ME-terraform-state` | [aws/main.tf](aws/main.tf) commented `backend "s3"` block | Your S3 state bucket name (plus region and DynamoDB lock table if renamed) |
+| `CHANGEMEtfstate` | [azure/main.tf](azure/main.tf) commented `backend "azurerm"` block | Your state storage account name (plus its resource group and container) |
+
 ## Remote state
 
-Each root has a commented `backend` block. Before real use, create the state
-store (S3 + DynamoDB lock table on AWS; storage account + container on Azure),
-uncomment, and run `terraform init -migrate-state`. Never keep production
-state on a laptop.
+Each root has a commented `backend` block containing the placeholders above.
+Before real use, create the state store (S3 bucket + DynamoDB lock table on
+AWS; storage account + `tfstate` container on Azure), fill in the real names,
+uncomment the block, and run `terraform init -migrate-state`. Never keep
+production state on a laptop — state files contain the generated database
+passwords in plaintext (they are gitignored for the same reason).
 
 ## Environments
 
