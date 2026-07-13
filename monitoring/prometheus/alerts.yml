@@ -1,0 +1,43 @@
+groups:
+  - name: todo-api
+    rules:
+      - alert: TodoApiDown
+        expr: up{job="todo-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Todo API target is down
+          description: Prometheus has been unable to scrape {{ $labels.instance }} for 1 minute.
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{job="todo-api", status=~"5.."}[5m]))
+            / sum(rate(http_requests_total{job="todo-api"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 5xx error rate above 5%
+          description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket{job="todo-api"}[5m])) by (le)
+          ) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: p95 latency above 500ms
+          description: "p95 request latency is {{ $value }}s over the last 5 minutes."
+
+      - alert: ReadinessFailing
+        expr: probe_success{job="todo-api-ready"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Readiness probe failing (database likely unreachable)
+          description: /ready has been failing for 2 minutes on {{ $labels.instance }}.

@@ -1,0 +1,135 @@
+# Azure DevOps pipeline — mirrors .github/workflows/ci-cd.yml.
+# Prerequisites (Project settings):
+#   - Service connection "acr-connection"  → Azure Container Registry
+#   - Service connection "aks-staging" / "aks-production" → Kubernetes
+#   - Environments "staging" and "production" (add an Approval check on production)
+trigger:
+  branches:
+    include: [main]
+  tags:
+    include: ["v*.*.*"]
+
+pr:
+  branches:
+    include: [main]
+
+variables:
+  imageRepository: fastapi-mcp-todo
+  containerRegistry: myregistry.azurecr.io
+  tag: $(Build.SourceVersion)
+  isMain: $[eq(variables['Build.SourceBranch'], 'refs/heads/main')]
+  isTag: $[startsWith(variables['Build.SourceBranch'], 'refs/tags/v')]
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Verify
+    displayName: Lint & Test
+    jobs:
+      - job: Lint
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: "3.12"
+          - script: pip install ruff==0.12.3 && ruff check .
+            displayName: ruff check
+
+      - job: Test
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: "3.12"
+          - script: pip install -r requirements-dev.txt
+            displayName: Install dependencies
+          - script: pytest tests/ -v --tb=short --junitxml=test-results.xml
+            displayName: pytest
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFiles: test-results.xml
+
+  - stage: Build
+    displayName: Build & push image
+    dependsOn: Verify
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - job: BuildPush
+        steps:
+          - task: Docker@2
+            displayName: Build and push to ACR
+            inputs:
+              command: buildAndPush
+              repository: $(imageRepository)
+              dockerfile: Dockerfile
+              containerRegistry: acr-connection
+              tags: |
+                $(tag)
+                latest
+          - script: |
+              curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b ./bin
+              ./bin/trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed \
+                $(containerRegistry)/$(imageRepository):$(tag)
+            displayName: Trivy vulnerability scan
+
+  - stage: DeployStaging
+    displayName: Deploy to staging (AKS)
+    dependsOn: Build
+    condition: and(succeeded(), eq(variables.isMain, 'true'))
+    jobs:
+      - deployment: Staging
+        environment: staging
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: KubernetesManifest@1
+                  displayName: Apply kustomize overlay
+                  inputs:
+                    action: deploy
+                    kubernetesServiceConnection: aks-staging
+                    namespace: todo-staging
+                    manifests: |
+                      $(Build.SourcesDirectory)/k8s/overlays/staging
+                    kustomize: true
+                    containers: $(containerRegistry)/$(imageRepository):$(tag)
+                - task: Kubernetes@1
+                  displayName: Wait for rollout
+                  inputs:
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: aks-staging
+                    namespace: todo-staging
+                    command: rollout
+                    arguments: status deployment/todo-api --timeout=180s
+
+  - stage: DeployProduction
+    displayName: Deploy to production (AKS)
+    dependsOn: Build
+    condition: and(succeeded(), eq(variables.isTag, 'true'))
+    jobs:
+      - deployment: Production
+        environment: production # approval gate configured on the environment
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: KubernetesManifest@1
+                  displayName: Apply kustomize overlay
+                  inputs:
+                    action: deploy
+                    kubernetesServiceConnection: aks-production
+                    namespace: todo-prod
+                    manifests: |
+                      $(Build.SourcesDirectory)/k8s/overlays/production
+                    kustomize: true
+                    containers: $(containerRegistry)/$(imageRepository):$(tag)
+                - task: Kubernetes@1
+                  displayName: Wait for rollout
+                  inputs:
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: aks-production
+                    namespace: todo-prod
+                    command: rollout
+                    arguments: status deployment/todo-api --timeout=300s
