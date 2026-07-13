@@ -83,9 +83,18 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: read
     steps:
+      - name: Log in to GHCR # needed if the package is ever made private
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Scan pushed image
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image-tag }}
           format: table
@@ -93,11 +102,26 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
 
+  check-deploy-secrets:
+    name: Check deploy credentials
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+    outputs:
+      has-staging: ${{ steps.check.outputs.has-staging }}
+      has-prod: ${{ steps.check.outputs.has-prod }}
+    steps:
+      - id: check
+        run: |
+          echo "has-staging=${{ secrets.STAGING_KUBECONFIG != '' }}" >> "$GITHUB_OUTPUT"
+          echo "has-prod=${{ secrets.PROD_KUBECONFIG != '' }}" >> "$GITHUB_OUTPUT"
+
   deploy-staging:
     name: Deploy to staging
     runs-on: ubuntu-latest
-    needs: [build, scan]
-    if: github.ref == 'refs/heads/main'
+    needs: [build, scan, check-deploy-secrets]
+    # Skips cleanly (not red) until STAGING_KUBECONFIG is configured
+    if: github.ref == 'refs/heads/main' && needs.check-deploy-secrets.outputs.has-staging == 'true'
     environment:
       name: staging
       url: https://todo-staging.example.com
@@ -123,8 +147,9 @@ jobs:
   deploy-production:
     name: Deploy to production
     runs-on: ubuntu-latest
-    needs: [build, scan]
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, scan, check-deploy-secrets]
+    # Skips cleanly (not red) until PROD_KUBECONFIG is configured
+    if: startsWith(github.ref, 'refs/tags/v') && needs.check-deploy-secrets.outputs.has-prod == 'true'
     environment:
       name: production # protected: requires manual approval in repo settings
       url: https://todo.example.com
